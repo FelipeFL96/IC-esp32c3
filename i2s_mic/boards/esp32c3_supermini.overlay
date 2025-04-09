@@ -1,0 +1,20 @@
+/// {
+//};
+  
+&pinctrl {
+    // i2s control pin definition
+    i2s_default: i2s_default {
+        group1 {
+            pinmux = <5>, <6>, <8>;
+            bias-disable;
+            //drive-strengh = <3>;
+        };
+    };
+};
+
+&i2s {
+    status = "okay";
+    pinctrl-0 = <&i2s_default>;
+    pinctrl-names = "default";
+    label = "I2S_0";
+};
