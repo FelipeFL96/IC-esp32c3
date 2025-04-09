@@ -67,16 +67,17 @@ void scan_i2c() {
     printk("No device found\n");
 }
 
-//int aht10_soft_reset(const struct device *dev) {
-//    int ret;
-//    uiint8_t init_cmd[3] = {AHT10_CMD_SOFTRESET, }
-//    ret = write_i2c(dev, AHT10_ADDR);
-//    if (ret != 0) {
-//        printk("Failed to soft reset sensor: %d\n", ret);
-//        return ret;
-//    }
-//    k_msleep(20);
-//}
+int aht10_soft_reset(const struct device *dev) {
+    int ret;
+    uint8_t init_cmd[3] = {AHT10_CMD_SOFTRESET};
+    ret = i2c_write(dev, init_cmd, 1, AHT10_ADDR);
+    if (ret != 0) {
+        printk("Failed to soft reset sensor: %d\n", ret);
+        return ret;
+    }
+    k_msleep(20);
+    return ret;
+}
 
 int aht10_init(const struct device *dev) {
     int ret;
@@ -146,7 +147,20 @@ int main(void) {
 
     while(1) {
         uint32_t raw_hum = 0, raw_temp = 0;
-        aht10_read_sensor(i2c_dev, &raw_hum, &raw_temp);
+
+        int attempts = 0, max_attempts = 3;
+        do {
+            ret = aht10_read_sensor(i2c_dev, &raw_hum, &raw_temp);
+            attempts++;
+        } while (ret != 0 && attempts <= max_attempts);
+
+        if (ret != 0) {
+            printk(AHT10_NAME"Read failed. Resetting sensor\n");
+            aht10_soft_reset(i2c_dev);
+            aht10_init(i2c_dev);
+            continue;
+        }
+
         int humidity = aht10_convert_humidity(raw_hum);
         int temperature = aht10_convert_temperature(raw_temp);
         printf("Temperatura: %dºC, Umidade: %d%%\n\n", temperature, humidity);
