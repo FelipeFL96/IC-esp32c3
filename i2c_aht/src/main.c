@@ -24,6 +24,14 @@
 
 const struct device *i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c0));
 
+void printv(uint8_t *data, size_t size) {
+    printf("(%p) [", data);
+    for (int i = 0; i < size; i++) {
+        printf(" %.2X", data[i]);
+    }
+    printf("]\n");
+}
+
 int init_i2c() {
     printk("Initializing i2c device\n");
     if (!device_is_ready(i2c_dev)) {
@@ -38,42 +46,6 @@ int init_i2c() {
     printk("Speed: %d\n", I2C_SPEED_GET(config));
     printk("Clock: %d\n", DT_PROP(I2C_DEV_NODE, clock_frequency));
     return 0;
-}
-
-int read_i2c(const struct device *dev, uint8_t devaddr, uint8_t *data, size_t data_length) {
-    int ret;
-
-    if (!device_is_ready(dev)) {
-        printk("Device not ready\n");
-        return -ENODEV;
-    }
-
-    ret = i2c_read(dev, data, data_length,  devaddr);
-    if (ret) {
-        printk("Call i2c_write_read failed: %d\n", ret);
-        return ret;
-    }
-
-    return 0;
-}
-
-int write_i2c(const struct device *dev, uint8_t devaddr, uint8_t command) {
-	int ret;
-
-	if (!device_is_ready(dev)) {
-		printk("Device not ready\n");
-		return -ENODEV;
-	}
-
-	uint8_t buf[1] = { command };
-
-	ret = i2c_write(dev, buf, 1, devaddr);
-	if (ret) {
-		printk("Call `i2c_write` failed: %d\n", ret);
-		return ret;
-	}
-
-	return 0;
 }
 
 void scan_i2c() {
@@ -118,21 +90,45 @@ int aht10_init(const struct device *dev) {
     return ret;
 }
 
-int aht10_read_sensor(const struct device *dev, uint8_t *data, size_t data_length) {
+int aht10_read_data(const struct device *dev, uint8_t *data) {
     int ret;
-    ret = write_i2c(dev, AHT10_ADDR, AHT10_CMD_TRIGGER);
-    if (ret != 0) {
-        printk("Failed to trigger sensor: %d\n", ret);
-        return ret;
-    }
-    k_msleep(1000);
+    uint8_t trigger_cmd[3] = {AHT10_CMD_TRIGGER, 0x33, 0x00};
 
-    ret = read_i2c(dev, AHT10_ADDR, data, data_length);
+    ret = i2c_write(i2c_dev, trigger_cmd, sizeof(trigger_cmd), AHT10_ADDR);
     if (ret != 0) {
         printk("Failed to read sensor: %d\n", ret);
         return ret;
     }
+    k_msleep(100);
+
+    ret = i2c_read(i2c_dev, data, AHT10_DATA_LENGTH, AHT10_ADDR);
+    if (ret != 0) {
+        printk("Failed to read sensor: %d\n", ret);
+        return ret;
+    }
+
     return ret;
+}
+
+int aht10_read_sensor(const struct device *dev, uint32_t *raw_hum, uint32_t *raw_temp) {
+    int ret;
+    uint8_t data[AHT10_DATA_LENGTH];
+    ret = aht10_read_data(i2c_dev, data);
+    if (ret != 0) {
+        printk("Failed to read sensor: %d\n", ret);
+        return ret;
+    }
+    *raw_hum = (data[1] << 12) | (data[2] << 4) | (data[3] >> 4);
+    *raw_temp = ((data[3] & 0x0F) << 16) | (data[4] << 8) | data[5];
+    return ret;
+}
+
+int aht10_convert_humidity(uint32_t raw_hum) {
+    return (raw_hum * 100) / (1 << 20);
+}
+
+int aht10_convert_temperature(uint32_t raw_temp) {
+    return (raw_temp * 200 / (1 << 20)) - 50;
 }
 
 int main(void) {
@@ -145,34 +141,17 @@ int main(void) {
     ret = aht10_init(i2c_dev);
     if (ret != 0)
         return 1;
+
     printk(AHT10_NAME"Sensor initialization completed\n");
 
-while(1) {
-    uint8_t trigger_cmd[3] = {AHT10_CMD_TRIGGER, 0x33, 0x00};
-    uint8_t data[6];
-    
-    i2c_write(i2c_dev, trigger_cmd, sizeof(trigger_cmd), AHT10_ADDR);
-    k_msleep(75);
-
-    i2c_read(i2c_dev, data, sizeof(data), AHT10_ADDR);
-
-    uint32_t hum_raw = (data[1] << 12) | (data[2] << 4) | (data[3] >> 4);
-    uint32_t temp_raw = ((data[3] & 0x0F) << 16) | (data[4] << 8) | data[5];
-
-    int humidity = (hum_raw * 100) / (1 << 20);
-    int temperature = (temp_raw * 200 / (1 << 20)) - 50;
-    printk("Read: %x\n", data[0]);
-    printk("Read: %x\n", data[1]);
-    printk("Read: %x\n", data[2]);
-    printk("Read: %x\n", data[3]);
-    printk("Read: %x\n", data[4]);
-    printk("Read: %x\n", data[5]);
-    printk("\n");
-    printf("Umidade: %d%%\n", humidity);
-    printf("Temperatura: %dºC\n", temperature);
-    printk("\n");
-k_msleep(2000);
-}
+    while(1) {
+        uint32_t raw_hum = 0, raw_temp = 0;
+        aht10_read_sensor(i2c_dev, &raw_hum, &raw_temp);
+        int humidity = aht10_convert_humidity(raw_hum);
+        int temperature = aht10_convert_temperature(raw_temp);
+        printf("Temperatura: %dºC, Umidade: %d%%\n\n", temperature, humidity);
+        k_msleep(2000);
+    }
     return 0;
 }
 
