@@ -21,6 +21,16 @@
 
 static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
 
+struct environment {
+    int humidity;
+    int temperature;
+};
+
+union env_data {
+    struct environment env;
+    int32_t raw[2];
+};
+
 int blink_led(int on_duration_ms) {
     int ret = gpio_pin_toggle_dt(&led);
     if (ret < 0) {
@@ -36,7 +46,7 @@ int blink_led(int on_duration_ms) {
     return ret;
 }
 
-int read_temperature_and_humidity(int *humidity, int *temperature) {
+int read_temperature_and_humidity(struct environment *env) {
     int ret = 0;
     uint32_t raw_hum = 0, raw_temp = 0;
 
@@ -50,10 +60,18 @@ int read_temperature_and_humidity(int *humidity, int *temperature) {
         return ret;
     }
 
-    *humidity = aht10_convert_humidity(raw_hum);
-    *temperature = aht10_convert_temperature(raw_temp);
+    env->humidity = aht10_convert_humidity(raw_hum);
+    env->temperature = aht10_convert_temperature(raw_temp);
 
     return ret;
+}
+
+void pritv(uint8_t *data, size_t size) {
+    printf("(%p) [", data);
+    for (int i = 0; i < size; i++) {
+        printf(" %.2X", data[i]);
+    }
+    printf("]\n");
 }
 
 int main(void) {
@@ -94,12 +112,12 @@ int main(void) {
 	nslookup(SERVER_IP, &res);
 	sock = connect_socket(&res, SERVER_PORT);
 
-    http_post(sock, SERVER_IP, "/connection");
+    http_post(sock, SERVER_IP, "/connection", NULL, 0);
     k_msleep(500);
     printk("\n");
-
+    union env_data data;
     while (1) {
-        ret = read_temperature_and_humidity(&temperature, &humidity);
+        ret = read_temperature_and_humidity(&(data.env));
         if (ret != 0) {
             printk(AHT10_NAME"Read failed. Resetting sensor\n");
             aht10_soft_reset();
@@ -108,11 +126,25 @@ int main(void) {
         }
 
         blink_led(500);
-        k_msleep(50);
+        k_msleep(100);
         blink_led(500);
 
-        printf("Temperatura: %dºC, Umidade: %d%%\n\n", temperature, humidity);
-        k_msleep(950);
+        printf("Temperatura: %dºC, Umidade: %d%%\n\n", data.env.temperature, data.env.humidity);
+
+        printf("Dados: %x %x\n", data.raw[0], data.raw[1]);
+
+        //uint8_t payload[8];
+        //memcpy(payload, data.raw, 8);
+
+        char *payload[50];
+        //payload[14] = 0;
+        sprintf(payload, "t=%d&h=%d", data.env.temperature, data.env.humidity);
+        int length = strlen(payload);
+        printf("PAYLOAD: (%d)%s\n", length, payload);
+        pritv(payload, 14);
+
+        http_post(sock, SERVER_IP, "/environment", payload, length);
+        k_msleep(900);
     }
 
 	zsock_close(sock);

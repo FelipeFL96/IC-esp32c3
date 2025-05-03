@@ -130,7 +130,7 @@ void http_get(int sock, char * hostname, char * url)
 	ret = http_client_req(sock, &req, 5000, NULL);
 }
 
-void http_post(int sock, char * hostname, char * url)
+void http_post(int sock, char * hostname, char * url, uint8_t * data, int data_length)
 {
     struct http_request req = {0};
     static uint8_t recv_buf[512];
@@ -141,6 +141,9 @@ void http_post(int sock, char * hostname, char * url)
     req.host = hostname;
     req.protocol = "HTTP/1.1";
     req.response = http_response_cb;
+    req.content_type_value = "application/x-www-form-urlencoded";
+    req.payload = data;
+    req.payload_len = data_length;
     req.recv_buf = recv_buf;
     req.recv_buf_len = sizeof(recv_buf);
 
