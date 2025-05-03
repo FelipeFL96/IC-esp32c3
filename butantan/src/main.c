@@ -31,6 +31,18 @@ union env_data {
     int32_t raw[2];
 };
 
+bool network_connect(char *ssid, char *psk) {
+    bool connected = false;
+    int attempt = 0, max_attempts = 3;
+    do {
+        connected = wifi_connect(SSID, PSK);
+        attempt++;
+        printk("Conexão tentativa (%d/%d): %d\n", attempt, max_attempts, connected);
+        k_msleep(200);
+    } while (!connected && attempt < max_attempts);
+    return connected;
+}
+
 int blink_led(int on_duration_ms) {
     int ret = gpio_pin_toggle_dt(&led);
     if (ret < 0) {
@@ -98,7 +110,7 @@ int main(void) {
 
     wifi_init();
 
-    bool connected = wifi_connect(SSID, PSK);
+    bool connected = network_connect(SSID, PSK);
     if (!connected) {
         printk("Connection failed!\n");
         return 1;

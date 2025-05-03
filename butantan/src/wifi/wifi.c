@@ -10,6 +10,7 @@ static K_SEM_DEFINE(ipv4_address_obtained, 0, 1);
 
 static struct net_mgmt_event_callback wifi_cb;
 static struct net_mgmt_event_callback ipv4_cb;
+bool connected = false;
 
 static void handle_wifi_scan_result(struct net_mgmt_event_callback *cb)
 {
@@ -32,11 +33,13 @@ static void handle_wifi_connect_result(struct net_mgmt_event_callback *cb)
 
     if (status->status)
     {
+        connected = false;
         printk("Connection request failed (%d)\n", status->status);
     }
     else
     {
-        printk("Connected\n");
+        connected = true;
+        printk("Connected: status = %d\n", status->status);
         k_sem_give(&wifi_connected);
     }
 }
@@ -48,9 +51,12 @@ static void handle_wifi_disconnect_result(struct net_mgmt_event_callback *cb)
     if (status->status)
     {
         printk("Disconnection request (%d)\n", status->status);
+        connected = false;
+        k_sem_give(&wifi_connected);
     }
     else
     {
+        connected = false;
         printk("Disconnected\n");
         k_sem_take(&wifi_connected, K_NO_WAIT);
     }
@@ -143,9 +149,17 @@ bool wifi_connect(const uint8_t *ssid, const uint8_t *psk)
         printk("WiFi Connection Request Failed\n");
         return false;
     }
-    else {
+    else
+    {
         k_sem_take(&wifi_connected, K_FOREVER);
-        return true;
+        if (connected) {
+            printk("Wifi Connection Successful\n");
+            return true;
+        }
+        else {
+            printk("Wifi Connection Failed\n");
+            return false;
+        }
     }
 }
 
