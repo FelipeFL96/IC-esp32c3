@@ -5,7 +5,7 @@
     // i2s control pin definition
     i2s_default: i2s_default {
         group1 {
-            pinmux = <5>, <6>, <8>;
+            pinmux = <I2S_I_BCK_GPIO5>, <I2S_I_SD_GPIO6>, <I2S_I_WS_GPIO7>;
             bias-disable;
             //drive-strengh = <3>;
         };
@@ -16,5 +16,9 @@
     status = "okay";
     pinctrl-0 = <&i2s_default>;
     pinctrl-names = "default";
-    label = "I2S_0";
+    label = "I2S";
+};
+
+&dma {
+    status = "okay";
 };
